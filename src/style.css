@@ -1,0 +1,25 @@
+
+/* Tus estilos base */
+.map-container { position: relative; width: 100vw; height: 100vh; }
+.map { width: 100%; height: 100%; background-color: #1a1a1a; }
+.control-panel { 
+  position: absolute; top: 20px; left: 20px; 
+  background: rgba(25, 25, 25, 0.9); color: white; 
+  padding: 15px 20px; border-radius: 8px; z-index: 1000; 
+  font-family: sans-serif; border: 1px solid #333; 
+}
+.layer-buttons { display: flex; gap: 8px; }
+button { background: rgba(255, 255, 255, 0.1); color: #aaa; border: 1px solid rgba(255, 255, 255, 0.2); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+button.active { background: #04381d; color: white; border-color: #28a745; }
+
+/* NUEVO: Estilo para la info de la parroquia */
+.info-panel {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9rem;
+  color: #ccc;
+}
+.info-panel strong {
+  color: #fff;
+}
