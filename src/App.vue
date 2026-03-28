@@ -161,6 +161,25 @@ onMounted(() => {
   });
 
   map.on('load', async () => {
+
+    map.getStyle().layers.forEach(layer => {
+      const id = layer.id.toLowerCase();
+      
+      const hideLayer = 
+        id.includes('road') || 
+        id.includes('bridge') || 
+        id.includes('tunnel') || 
+        id.includes('transit') || 
+        id.includes('railway') || 
+        id.includes('poi') || 
+        id.includes('housenumber') || 
+        id.includes('water_name') ||
+        id.includes('place_neighborhood'); // Oculta nombres de barrios pequeños para limpiar la vista
+
+      if (hideLayer) {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    });
     const baseUrl = import.meta.env.BASE_URL;
     
     const [imgExposure, imgPriority] = await Promise.all([
@@ -220,7 +239,7 @@ onMounted(() => {
         source: 'source-Barrios',
         paint: {
           'fill-color': '#ffffff',
-          'fill-opacity': 0.02
+          'fill-opacity': 0.001
         }
       });
 
@@ -230,8 +249,8 @@ onMounted(() => {
         source: 'source-Barrios',
         paint: {
           'line-color': '#ffffff',
-          'line-width': 1.5,
-          'line-opacity': 1
+          'line-width': 1,
+          'line-opacity': 0.5
         }
       });
 
@@ -343,7 +362,7 @@ onMounted(() => {
                     countRes,
                     countInd,
                     totalArea: totalArea.toFixed(2),
-                    lossMin: totalArea * 660, 
+                    lossMin: totalArea * 460, 
                     lossMax: totalArea * 740  
                   };
                 } else {
