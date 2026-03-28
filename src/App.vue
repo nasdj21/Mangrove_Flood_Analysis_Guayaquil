@@ -2,7 +2,7 @@
   <div class="map-container">
     <div id="map" class="map"></div>
     <div class="control-panel">
-      <h3 class="title">Análisis de Zonas - Guayaquil</h3>
+      <h3 class="title">Flooding Exposure - Guayaquil</h3>
       
       <div class="layer-buttons">
         <button 
