@@ -4,5 +4,5 @@ import vue from '@vitejs/plugin-vue'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  publicPath: '/Mangrove_Flood_Analysis_Guayaquil/'
+  base: '/Mangrove_Flood_Analysis_Guayaquil/',
 })

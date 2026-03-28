@@ -17,6 +17,13 @@
 
       <div v-if="selectedParroquia" class="info-panel">
         Parroquia Seleccionada: <strong>{{ selectedParroquia }}</strong>
+        <div class="stats-box">
+           <span v-if="isCalculating">Analizando píxeles...</span>
+           <span v-else-if="percentageVulnerable !== null">
+              Área Vulnerable ({{ currentLayer }}): 
+              <strong style="color: #ff4a4a; font-size: 1.2rem;">{{ percentageVulnerable }}%</strong>
+           </span>
+        </div>
       </div>
 
     </div>
@@ -30,6 +37,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { fromArrayBuffer } from 'geotiff';
 
 
+const percentageVulnerable = ref(null);
+const isCalculating = ref(false);
+const rasterDataCache = ref({}); 
 let map = null;
 const currentLayer = ref('Exposure');
 const selectedParroquia = ref(null);
@@ -54,9 +64,7 @@ const calculateBBox = (geometry) => {
 };
 
 
-const rasterDataCache = ref({});
-
-const createRasterImage = async (url, hexColor, targetBand = 0, targetValue = 5) => {
+const createRasterImage = async (layerName, url, hexColor, targetBand = 0, targetValue = 5) => {
   try {
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
@@ -69,6 +77,14 @@ const createRasterImage = async (url, hexColor, targetBand = 0, targetValue = 5)
 
     const rasters = await image.readRasters();
     const data = rasters[targetBand]; 
+
+    rasterDataCache.value[layerName] = {
+      data: data,
+      width: width,
+      height: height,
+      bbox: bbox,
+      targetValue: targetValue
+    };
 
     const canvas = document.createElement('canvas')
     canvas.width = width
@@ -107,6 +123,18 @@ const createRasterImage = async (url, hexColor, targetBand = 0, targetValue = 5)
   }
 };
 
+const pointInPolygon = (point, vs) => {
+  let x = point[0], y = point[1];
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    let xi = vs[i][0], yi = vs[i][1];
+    let xj = vs[j][0], yj = vs[j][1];
+    let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 onMounted(() => {
   map = new maplibregl.Map({
     container: 'map',
@@ -117,10 +145,13 @@ onMounted(() => {
   });
 
   map.on('load', async () => {
+
+    const baseUrl = import.meta.env.BASE_URL;
    
+    
     const [imgExposure, imgPriority] = await Promise.all([
-      createRasterImage('/gye_mapbiomas_protection_exposure.tif', '#e00d26', 3, 1), 
-      createRasterImage('/gye_mapbiomas_protection_exposure.tif', '#edea1f', 4, 1)
+      createRasterImage('Exposure', `${baseUrl}gye_mapbiomas_protection_exposure.tif`, '#e00d26', 3, 1), 
+      createRasterImage('Priority', `${baseUrl}gye_mapbiomas_protection_exposure.tif`, '#edea1f', 4, 1)
     ]);
 
     const rasterImages = { 'Exposure': imgExposure, 'Priority': imgPriority };
@@ -151,7 +182,7 @@ onMounted(() => {
    
     map.addSource('source-parroquias', {
       type: 'geojson',
-      data: '/parroquias.geojson'
+      data: `${baseUrl}parroquias.geojson`
     });
 
     map.addLayer({
@@ -186,16 +217,73 @@ onMounted(() => {
     map.on('click', 'layer-parroquias-fill', (e) => {
       const feature = e.features[0];
       
-  
-      selectedParroquia.value = feature.properties.PARROQUIA || 'Parroquia sin nombre';
-
-  
+      selectedParroquia.value = feature.properties.PARROQUIA || feature.properties.DPA_PARROQ || 'Parroquia sin nombre';
       const bbox = calculateBBox(feature.geometry);
+      map.fitBounds(bbox, { padding: 50, duration: 1200 });
+     
+      const currentRaster = rasterDataCache.value[currentLayer.value];
+      
+      if (currentRaster) {
+        isCalculating.value = true;
+        percentageVulnerable.value = null;
 
-      map.fitBounds(bbox, {
-        padding: 50, 
-        duration: 1200 
-      });
+        const polygonCoords = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates[0] : null;
+
+        if (polygonCoords) {
+         
+           setTimeout(() => {
+              let totalPixelsInPolygon = 0;
+              let vulnerablePixels = 0;
+
+             
+              const { data, width, height, bbox: rBbox, targetValue } = currentRaster;
+              const rMinLng = rBbox[0];
+              const rMinLat = rBbox[1];
+              const rMaxLng = rBbox[2];
+              const rMaxLat = rBbox[3];
+
+              const pixelWidthDeg = (rMaxLng - rMinLng) / width;
+              const pixelHeightDeg = (rMaxLat - rMinLat) / height; 
+
+              for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                 
+                  const pixelLng = rMinLng + (x * pixelWidthDeg);
+                  const pixelLat = rMaxLat - (y * Math.abs(pixelHeightDeg)); 
+
+                  if (pixelLng >= bbox[0][0] && pixelLng <= bbox[1][0] && 
+                      pixelLat >= bbox[0][1] && pixelLat <= bbox[1][1]) {
+                      
+               
+                      if (pointInPolygon([pixelLng, pixelLat], polygonCoords)) {
+                        totalPixelsInPolygon++;
+                        
+                       
+                        const pixelIndex = (y * width) + x;
+                        if (data[pixelIndex] === targetValue) {
+                          vulnerablePixels++;
+                        }
+                      }
+                  }
+                }
+              }
+
+           
+              if (totalPixelsInPolygon > 0) {
+                const percent = (vulnerablePixels / totalPixelsInPolygon) * 100;
+                percentageVulnerable.value = percent.toFixed(2); 
+              } else {
+                percentageVulnerable.value = "0.00";
+              }
+              isCalculating.value = false;
+
+           }, 50); 
+        } else {
+        
+            console.warn("Análisis complejo requerido para MultiPolygon");
+            isCalculating.value = false;
+        }
+      }
     });
   });
 });
