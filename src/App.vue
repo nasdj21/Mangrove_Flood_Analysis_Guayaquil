@@ -24,6 +24,24 @@
               <strong style="color: #ff4a4a; font-size: 1.2rem;">{{ percentageVulnerable }}%</strong>
            </span>
         </div>
+
+        <div v-if="economicImpact" class="economic-box" style="margin-top: 15px;">
+          <h4 style="margin: 0 0 8px 0; color: #ffae00; border-bottom: 1px solid #444; padding-bottom: 5px;">
+            Impacto Económico Estimado
+          </h4>
+          <div style="font-size: 0.85rem; margin-bottom: 8px; color: #ccc;">
+            Predios: 
+            <span style="color: white">{{ economicImpact.countRes }} Res</span> | 
+            <span style="color: white">{{ economicImpact.countInd }} Ind</span>
+          </div>
+          <div style="font-size: 0.9rem; line-height: 1.3;">
+            Infraestructura expuesta ({{ economicImpact.totalArea }} m²):<br/>
+            <strong style="color: #ff4a4a; font-size: 1.1rem;">
+              {{ formatMoney(economicImpact.lossMin) }} - {{ formatMoney(economicImpact.lossMax) }}
+            </strong>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -42,6 +60,11 @@ const rasterDataCache = ref({});
 let map = null;
 const currentLayer = ref('Exposure');
 const selectedParroquia = ref(null);
+const prediosData = ref(null);
+const economicImpact = ref(null);
+const formatMoney = (value) => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+};
 
 const calculateBBox = (geometry) => {
   let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
@@ -112,7 +135,6 @@ const createRasterImage = async (layerName, url, hexColor, targetBand = 0, targe
       ]
     };
   } catch (error) {
-    console.error(`Error procesando ${url}:`, error);
     return null;
   }
 };
@@ -134,7 +156,7 @@ onMounted(() => {
     container: 'map',
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     center: [-79.8862, -2.19],
-    zoom: 11,
+    zoom: 12,
     pitch: 0
   });
 
@@ -172,53 +194,62 @@ onMounted(() => {
     }
 
     const geojsonUrl = `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}parroquias.geojson`;
+
+    try {
+      const prediosUrl = `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}predios_inundables.geojson`;
+      const response = await fetch(prediosUrl);
+      if (response.ok) {
+        prediosData.value = await response.json();
+      }
+    } catch (error) {
+    }
     
     try {
       const response = await fetch(geojsonUrl);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const geojsonData = await response.json();
 
-      map.addSource('source-parroquias', {
+      map.addSource('source-Barrios', {
         type: 'geojson',
         data: geojsonData 
       });
 
       map.addLayer({
-        id: 'layer-parroquias-fill',
+        id: 'layer-Barrios-fill',
         type: 'fill',
-        source: 'source-parroquias',
+        source: 'source-Barrios',
         paint: {
           'fill-color': '#ffffff',
-          'fill-opacity': 0.01
+          'fill-opacity': 0.02
         }
       });
 
       map.addLayer({
-        id: 'layer-parroquias-line',
+        id: 'layer-Barrios-line',
         type: 'line',
-        source: 'source-parroquias',
+        source: 'source-Barrios',
         paint: {
           'line-color': '#ffffff',
-          'line-width': 1,
-          'line-opacity': 0.5
+          'line-width': 1.5,
+          'line-opacity': 1
         }
       });
 
     } catch (error) {
-      console.error(error);
     }
 
-    map.on('mouseenter', 'layer-parroquias-fill', () => {
+    map.on('mouseenter', 'layer-Barrios-fill', () => {
       map.getCanvas().style.cursor = 'pointer';
     });
-    map.on('mouseleave', 'layer-parroquias-fill', () => {
+    map.on('mouseleave', 'layer-Barrios-fill', () => {
       map.getCanvas().style.cursor = '';
     });
 
-    map.on('click', 'layer-parroquias-fill', (e) => {
+    map.on('click', 'layer-Barrios-fill', (e) => {
       const feature = e.features[0];
       
-      selectedParroquia.value = feature.properties.PARROQUIA || feature.properties.DPA_PARROQ || 'Parroquia sin nombre';
+      selectedParroquia.value = feature.properties.Barrios|| 'Barrio sin nombre';
+      
       const bbox = calculateBBox(feature.geometry);
       map.fitBounds(bbox, { padding: 50, duration: 1200 });
      
@@ -227,6 +258,7 @@ onMounted(() => {
       if (currentRaster) {
         isCalculating.value = true;
         percentageVulnerable.value = null;
+        economicImpact.value = null; 
 
         const polygonCoords = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates[0] : null;
 
@@ -272,6 +304,53 @@ onMounted(() => {
               }
               isCalculating.value = false;
 
+              if (prediosData.value && polygonCoords) {
+                let countRes = 0, countInd = 0;
+                let areaRes = 0, areaInd = 0;
+
+                prediosData.value.features.forEach(featurePredio => {
+                  const props = featurePredio.properties;
+                  const geom = featurePredio.geometry;
+
+                  let pt;
+                  if (geom.type === 'Polygon') pt = geom.coordinates[0][0];
+                  else if (geom.type === 'MultiPolygon') pt = geom.coordinates[0][0][0];
+                  else if (geom.type === 'Point') pt = geom.coordinates;
+
+                  if (pt) {
+                    if (pt[0] >= bbox[0][0] && pt[0] <= bbox[1][0] &&
+                        pt[1] >= bbox[0][1] && pt[1] <= bbox[1][1]) {
+
+                      if (pointInPolygon(pt, polygonCoords)) {
+                        const tipo = (props.Uso_de_Edi || '').toLowerCase();
+                        const area = parseFloat(props.Shape__Are || 0);
+
+                        if (tipo.includes('residenci')) {
+                          countRes++;
+                          areaRes += area;
+                        } else if (tipo.includes('industrial') || tipo.includes('industria')) {
+                          countInd++;
+                          areaInd += area;
+                        }
+                      }
+                    }
+                  }
+                });
+
+                if (countRes > 0 || countInd > 0) {
+                  const totalArea = areaRes + areaInd;
+                  economicImpact.value = {
+                    countRes,
+                    countInd,
+                    totalArea: totalArea.toFixed(2),
+                    lossMin: totalArea * 660, 
+                    lossMax: totalArea * 740  
+                  };
+                } else {
+                  economicImpact.value = null;
+                }
+              }
+
            }, 50); 
         } else {
             isCalculating.value = false;
@@ -296,4 +375,3 @@ const changeLayer = (layer) => {
   }
 };
 </script>
-
