@@ -36,7 +36,6 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { fromArrayBuffer } from 'geotiff';
 
-
 const percentageVulnerable = ref(null);
 const isCalculating = ref(false);
 const rasterDataCache = ref({}); 
@@ -44,15 +43,11 @@ let map = null;
 const currentLayer = ref('Exposure');
 const selectedParroquia = ref(null);
 
-
 const calculateBBox = (geometry) => {
   let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-
- 
   const coords = geometry.type === 'MultiPolygon' ? geometry.coordinates.flat(2) :
                  geometry.type === 'Polygon' ? geometry.coordinates.flat(1) : [];
 
- 
   coords.forEach(coord => {
     if (coord[0] < minLng) minLng = coord[0];
     if (coord[1] < minLat) minLat = coord[1];
@@ -62,7 +57,6 @@ const calculateBBox = (geometry) => {
 
   return [[minLng, minLat], [maxLng, maxLat]];
 };
-
 
 const createRasterImage = async (layerName, url, hexColor, targetBand = 0, targetValue = 5) => {
   try {
@@ -145,9 +139,7 @@ onMounted(() => {
   });
 
   map.on('load', async () => {
-
     const baseUrl = import.meta.env.BASE_URL;
-   
     
     const [imgExposure, imgPriority] = await Promise.all([
       createRasterImage('Exposure', `${baseUrl}gye_mapbiomas_protection_exposure.tif`, '#e00d26', 3, 1), 
@@ -179,32 +171,42 @@ onMounted(() => {
       });
     }
 
-   
-    map.addSource('source-parroquias', {
-      type: 'geojson',
-      data: `${baseUrl}parroquias.geojson`
-    });
+    const geojsonUrl = `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}parroquias.geojson`;
+    
+    try {
+      const response = await fetch(geojsonUrl);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const geojsonData = await response.json();
 
-    map.addLayer({
-      id: 'layer-parroquias-fill',
-      type: 'fill',
-      source: 'source-parroquias',
-      paint: {
-        'fill-color': '#ffffff',
-        'fill-opacity': 0.01
-      }
-    });
+      map.addSource('source-parroquias', {
+        type: 'geojson',
+        data: geojsonData 
+      });
 
-    map.addLayer({
-      id: 'layer-parroquias-line',
-      type: 'line',
-      source: 'source-parroquias',
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': 1,
-        'line-opacity': 0.5
-      }
-    });
+      map.addLayer({
+        id: 'layer-parroquias-fill',
+        type: 'fill',
+        source: 'source-parroquias',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.01
+        }
+      });
+
+      map.addLayer({
+        id: 'layer-parroquias-line',
+        type: 'line',
+        source: 'source-parroquias',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 1,
+          'line-opacity': 0.5
+        }
+      });
+
+    } catch (error) {
+      console.error(error);
+    }
 
     map.on('mouseenter', 'layer-parroquias-fill', () => {
       map.getCanvas().style.cursor = 'pointer';
@@ -213,7 +215,6 @@ onMounted(() => {
       map.getCanvas().style.cursor = '';
     });
 
- 
     map.on('click', 'layer-parroquias-fill', (e) => {
       const feature = e.features[0];
       
@@ -230,12 +231,10 @@ onMounted(() => {
         const polygonCoords = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates[0] : null;
 
         if (polygonCoords) {
-         
            setTimeout(() => {
               let totalPixelsInPolygon = 0;
               let vulnerablePixels = 0;
 
-             
               const { data, width, height, bbox: rBbox, targetValue } = currentRaster;
               const rMinLng = rBbox[0];
               const rMinLat = rBbox[1];
@@ -247,18 +246,15 @@ onMounted(() => {
 
               for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
-                 
                   const pixelLng = rMinLng + (x * pixelWidthDeg);
                   const pixelLat = rMaxLat - (y * Math.abs(pixelHeightDeg)); 
 
                   if (pixelLng >= bbox[0][0] && pixelLng <= bbox[1][0] && 
                       pixelLat >= bbox[0][1] && pixelLat <= bbox[1][1]) {
                       
-               
                       if (pointInPolygon([pixelLng, pixelLat], polygonCoords)) {
                         totalPixelsInPolygon++;
                         
-                       
                         const pixelIndex = (y * width) + x;
                         if (data[pixelIndex] === targetValue) {
                           vulnerablePixels++;
@@ -268,7 +264,6 @@ onMounted(() => {
                 }
               }
 
-           
               if (totalPixelsInPolygon > 0) {
                 const percent = (vulnerablePixels / totalPixelsInPolygon) * 100;
                 percentageVulnerable.value = percent.toFixed(2); 
@@ -279,8 +274,6 @@ onMounted(() => {
 
            }, 50); 
         } else {
-        
-            console.warn("Análisis complejo requerido para MultiPolygon");
             isCalculating.value = false;
         }
       }
