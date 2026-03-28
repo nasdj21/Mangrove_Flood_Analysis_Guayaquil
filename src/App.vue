@@ -165,21 +165,19 @@ onMounted(() => {
     map.getStyle().layers.forEach(layer => {
       const id = layer.id.toLowerCase();
       
-      const hideLayer = 
-        id.includes('road') || 
-        id.includes('bridge') || 
-        id.includes('tunnel') || 
-        id.includes('transit') || 
-        id.includes('railway') || 
-        id.includes('poi') || 
-        id.includes('housenumber') || 
-        id.includes('water_name') ||
-        id.includes('place_neighborhood'); // Oculta nombres de barrios pequeños para limpiar la vista
+      const isRoad = id.includes('road') || id.includes('bridge') || id.includes('tunnel') || id.includes('railway');
+      
+      if (isRoad && layer.type === 'line') {
+        map.setPaintProperty(layer.id, 'line-opacity', 0.15);
+      }
 
-      if (hideLayer) {
+      const isNoise = id.includes('poi') || id.includes('housenumber') || id.includes('water_name') || id.includes('place_neighborhood');
+
+      if (isNoise) {
         map.setLayoutProperty(layer.id, 'visibility', 'none');
       }
     });
+   
     const baseUrl = import.meta.env.BASE_URL;
     
     const [imgExposure, imgPriority] = await Promise.all([
@@ -212,10 +210,10 @@ onMounted(() => {
       });
     }
 
-    const geojsonUrl = `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}parroquias.geojson`;
+    const geojsonUrl = `${baseUrl}parroquias.geojson`;
 
     try {
-      const prediosUrl = `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}predios_inundables.geojson`;
+      const prediosUrl = `${baseUrl}predios_inundables.geojson`;
       const response = await fetch(prediosUrl);
       if (response.ok) {
         prediosData.value = await response.json();
