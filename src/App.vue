@@ -50,7 +50,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
-import maplibregl from 'maplibre-gl';
+import maplibregl from 'maplibre-gl/dist/maplibre-gl.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { fromArrayBuffer } from 'geotiff';
 
